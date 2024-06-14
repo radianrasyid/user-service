@@ -2,17 +2,82 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/prithuadhikary/user-service/domain"
+	"github.com/prithuadhikary/user-service/helper"
 	"github.com/prithuadhikary/user-service/model"
 	"github.com/prithuadhikary/user-service/repository"
 )
 
+var secretKey = []byte("radianrasyid")
+
 type UserService interface {
 	Signup(request *model.SignupRequest) error
+	Signin(request *model.SigninRequest) (string, *domain.Session, error)
+	Signout(request *model.Signout) error
+	Whoami(request *model.Whoami) (*model.WhoamiResponse, error)
 }
 
 type userService struct {
 	repository repository.UserRepository
+}
+
+// Signin implements UserService.
+func (service *userService) Signin(request *model.SigninRequest) (string, *domain.Session, error) {
+	exists := service.repository.ExistsByUsername(request.Username)
+	if !exists {
+		return "", nil, errors.New("username and password might be wrong")
+	}
+
+	currentUser, err := service.repository.FindSpecificUsername(request.Username)
+	if err != nil {
+		return "", nil, err // Pass the error returned by FindSpecificUsername directly
+	}
+
+	passwordSame := helper.CheckPasswordHash(request.Password, currentUser.Password)
+	fmt.Println(passwordSame)
+	if !passwordSame {
+		return "", nil, errors.New("username and password might be wrong")
+	}
+
+	token, err := service.CreateToken(&currentUser)
+	fmt.Println("ini error di service sign in", err)
+	if err != nil {
+		return "", nil, errors.New("something went wrong when creating your token")
+	} // Return nil if the login is successful
+	service.repository.EditUser(currentUser.Username, token, "token")
+
+	session, err := service.CreateSession(currentUser.ID)
+
+	if err != nil {
+		return "", nil, errors.New("something went wrong when creating your session")
+	}
+
+	fmt.Println("ini session", &session)
+
+	return currentUser.ID.String(), session, nil
+
+}
+
+func (service *userService) CreateToken(request *domain.User) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": request.Username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"role":     request.Role,
+	})
+
+	tokenString, err := token.SignedString(secretKey)
+	fmt.Println("ini error di service createToken", err)
+	if err != nil {
+		return "", errors.New("something went wrong when creating token")
+	}
+
+	return tokenString, nil
 }
 
 func (service *userService) Signup(request *model.SignupRequest) error {
@@ -27,8 +92,86 @@ func (service *userService) Signup(request *model.SignupRequest) error {
 		Username: request.Username,
 		Password: request.Password,
 		Role:     "END_USER",
+		Email:    request.Email,
 	})
 	return nil
+}
+
+func (service *userService) Signout(request *model.Signout) error {
+	err := service.VerifyToken(request.Jwt)
+
+	if err != nil {
+		return errors.New("token is not verified")
+	}
+
+	token, err := jwt.Parse(request.Jwt, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+
+	if err != nil {
+		return errors.New("can not verify jwt")
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("ini isi jwt", claims["username"])
+		service.repository.EditUser(claims["username"].(string), nil, "token")
+		return nil
+	} else {
+		log.Printf("invalid jwt token")
+		return nil
+	}
+}
+
+func (service *userService) VerifyToken(tokenString string) error {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return secretKey, nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if !token.Valid {
+		return fmt.Errorf("invalid token")
+	}
+
+	return nil
+}
+
+func (service *userService) CreateSession(userID uuid.UUID) (*domain.Session, error) {
+	session := &domain.Session{
+		ID:        uuid.New(),
+		UserID:    userID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+
+	err := service.repository.CreateSession(session)
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+func (service *userService) Whoami(request *model.Whoami) (*model.WhoamiResponse, error) {
+	SessionID, err := uuid.Parse(request.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := service.repository.FindUserBySessionID(SessionID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.WhoamiResponse{
+		ID:       result.ID,
+		Username: result.Username,
+		Role:     result.Role,
+		Email:    result.Email,
+		Token:    result.Token,
+	}, nil
 }
 
 func NewUserService(repository repository.UserRepository) UserService {

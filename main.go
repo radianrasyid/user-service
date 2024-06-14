@@ -1,7 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/prithuadhikary/user-service/controller"
 	"github.com/prithuadhikary/user-service/domain"
@@ -11,26 +18,23 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
-	"log"
-	"os"
-	"time"
 )
 
 func main() {
 	db, err := InitialiseDB(&DbConfig{
 		User:     "postgres",
-		Password: "password",
-		DbName:   "groot",
+		Password: "300402",
+		DbName:   "go-learn",
 		Host:     "localhost",
 		Port:     "5432",
-		Schema:   "users",
+		Schema:   "public",
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to initialize database: %v", err)
 	}
-	err = db.AutoMigrate(&domain.User{})
+	err = db.AutoMigrate(&domain.User{}, &domain.Session{})
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to perform database operation: %v", err)
 	}
 
 	userRepository := repository.NewUserRepository(db)
@@ -40,11 +44,38 @@ func main() {
 
 	controller.NewUserController(engine, userService)
 
-	log.Fatal(engine.Run(":8080"))
+	server := &http.Server{
+		Addr:    ":8088",
+		Handler: engine,
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("failed to start HTTP server: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("failed to gracefully shutdown server: %v", err)
+	}
+
+	log.Println("Server gracefully stopped")
+
 }
 
 func InitialiseDB(dbConfig *DbConfig) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%v user=%v password=%v dbname=%v port=%v sslmode=require TimeZone=Asia/Kolkata", dbConfig.Host, dbConfig.User, dbConfig.Password, dbConfig.DbName, dbConfig.Port)
+	dsn := fmt.Sprintf("host=%v user=%v password=%v dbname=%v port=%v TimeZone=Asia/Kolkata", dbConfig.Host, dbConfig.User, dbConfig.Password, dbConfig.DbName, dbConfig.Port)
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{

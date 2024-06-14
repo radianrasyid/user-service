@@ -1,9 +1,10 @@
 package domain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"fmt"
+
 	"github.com/google/uuid"
+	"github.com/prithuadhikary/user-service/helper"
 	"gorm.io/gorm"
 )
 
@@ -13,14 +14,21 @@ type User struct {
 	Username string
 	Password string
 	Role     string
+	Token    string
+	Email    string
+	Session  []Session `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE;"`
 }
 
 func (user *User) BeforeCreate(tx *gorm.DB) error {
 	user.ID = uuid.New()
 
+	userPassword, err := helper.HashPassword(user.Password)
+
+	if err != nil {
+		return fmt.Errorf("error on password hashing: %w", err)
+	}
 	// Digest and store the hex representation.
-	digest := sha256.Sum256([]byte(user.Password))
-	user.Password = hex.EncodeToString(digest[:])
+	user.Password = userPassword
 
 	return nil
 }
