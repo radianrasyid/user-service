@@ -1,9 +1,13 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,8 +23,10 @@ var secretKey = []byte("radianrasyid")
 type UserService interface {
 	Signup(request *model.SignupRequest) error
 	Signin(request *model.SigninRequest) (string, *domain.Session, error)
+	IsUserExist(username string) (bool, error)
 	Signout(request *model.Signout) error
 	Whoami(request *model.Whoami) (*model.WhoamiResponse, error)
+	EditUser(request *model.EditUserRequest, currentUser *model.WhoamiResponse) (*model.EditUserRequest, error)
 }
 
 type userService struct {
@@ -172,6 +178,54 @@ func (service *userService) Whoami(request *model.Whoami) (*model.WhoamiResponse
 		Email:    result.Email,
 		Token:    result.Token,
 	}, nil
+}
+
+func (service *userService) EditUser(request *model.EditUserRequest, currentUser *model.WhoamiResponse) (*model.EditUserRequest, error) {
+	fmt.Print("ini request yang masuk ke edit user")
+	fmt.Println(request)
+	newRequest := &model.EditUserRequest{}
+
+	requestValue := reflect.ValueOf(request).Elem()
+	newRequestValue := reflect.ValueOf(newRequest).Elem()
+	var loopErrors []string
+	for i := 0; i < requestValue.NumField(); i++ {
+		reqField := requestValue.Field(i)
+		if !reqField.IsNil() {
+			newReqField := newRequestValue.FieldByName(requestValue.Type().Field(i).Name)
+			if newReqField.IsValid() && newReqField.CanSet() {
+				fieldName := requestValue.Type().Field(i).Name
+				fieldValue := requestValue.Interface()
+				fmt.Print("ini field yang mau di update")
+				fmt.Println(fieldName)
+				newReqField.Set(reqField)
+				err := service.repository.EditUser(currentUser.Username, fieldValue, strings.ToLower(fieldName))
+
+				if err != nil {
+					loopErrors = append(loopErrors, fmt.Sprintf("can not update this field %f", fieldName))
+				}
+			}
+		}
+	}
+
+	fmt.Print("ini data error edit user")
+	fmt.Println(loopErrors)
+
+	if len(loopErrors) > 0 {
+		return nil, json.NewEncoder(os.Stdout).Encode(loopErrors)
+	}
+
+	return newRequest, nil
+}
+
+func (service *userService) IsUserExist(username string) (bool, error) {
+	err := service.repository.ExistsByUsername(username)
+	fmt.Print("this query from exist by username")
+	fmt.Println(err)
+	if err {
+		return false, errors.New(fmt.Sprintf("problem occured when checking validity of username %v", err))
+	}
+
+	return true, nil
 }
 
 func NewUserService(repository repository.UserRepository) UserService {

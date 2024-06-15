@@ -20,3 +20,12 @@ type WhoamiResponse struct {
 	Email    string    `json:"email"`
 	Token    string    `json:"token"`
 }
+
+type EditUserRequest struct {
+	Username *string `json:"username,omitempty"`
+	Email    *string `json:"email,omitempty"`
+}
+
+type IsUsernameExistRequest struct {
+	Username *string `json:"username,omitempty"`
+}

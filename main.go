@@ -20,10 +20,12 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+var DB *gorm.DB
+
 func main() {
 	db, err := InitialiseDB(&DbConfig{
 		User:     "postgres",
-		Password: "300402",
+		Password: "200875",
 		DbName:   "go-learn",
 		Host:     "localhost",
 		Port:     "5432",
@@ -36,7 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to perform database operation: %v", err)
 	}
-
+	DB = db
 	userRepository := repository.NewUserRepository(db)
 	userService := service.NewUserService(userRepository)
 

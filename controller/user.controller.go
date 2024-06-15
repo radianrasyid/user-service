@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/prithuadhikary/user-service/helper"
+	"github.com/prithuadhikary/user-service/middleware"
 	"github.com/prithuadhikary/user-service/model"
 	"github.com/prithuadhikary/user-service/service"
 	"github.com/prithuadhikary/user-service/util"
@@ -18,6 +19,8 @@ type UserController interface {
 	Signup(ctx *gin.Context)
 	SignIn(ctx *gin.Context)
 	Whoami(ctx *gin.Context)
+	EditUser(ctx *gin.Context)
+	IsUsernameValid(ctx *gin.Context)
 }
 
 type userController struct {
@@ -144,10 +147,82 @@ func (controller userController) Signout(ctx *gin.Context) {
 	})
 }
 
+func (controller userController) EditUser(ctx *gin.Context) {
+	request := &model.EditUserRequest{}
+
+	if err := ctx.ShouldBind(request); err != nil && errors.As(err, &validator.ValidationErrors{}) {
+		util.RenderBindingErrors(ctx, err.(validator.ValidationErrors))
+		return
+	}
+
+	fmt.Print("ini data yang masuk edit user controller")
+	fmt.Println(request.Username)
+	user, exist := ctx.Get("user")
+
+	if !exist {
+		ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"message": "user data not found",
+		})
+		return
+	}
+
+	userData := user.(*model.WhoamiResponse)
+
+	editedUser, err := controller.service.EditUser(request, userData)
+
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": err,
+		})
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"message": "user data edited successfully",
+		"data":    editedUser,
+	})
+}
+
+func (controller userController) IsUsernameValid(ctx *gin.Context) {
+	username := ctx.Query("username")
+	user, exist := ctx.Get("user")
+
+	if !exist {
+		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+	}
+
+	fmt.Print("ini data user")
+	fmt.Println(user)
+
+	exist, err := controller.service.IsUserExist(username)
+
+	if err != nil {
+		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": err,
+		})
+		return
+	}
+
+	if exist {
+		ctx.JSON(http.StatusAccepted, gin.H{
+			"message": "user already exist",
+			"data":    exist,
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"message": "user not exist",
+		"data":    exist,
+	})
+}
+
 func NewUserController(engine *gin.Engine, userService service.UserService) {
 	controller := &userController{
 		service: userService,
 	}
+	middleware := middleware.NewAuthMiddleware(userService)
 	api := engine.Group("api")
 	{
 		api.POST("users", controller.Signup)
@@ -155,5 +230,7 @@ func NewUserController(engine *gin.Engine, userService service.UserService) {
 		api.POST("users/logout", controller.Signout)
 		api.GET("users/whoami", controller.Whoami)
 		api.GET("/service", controller.ServiceChecking)
+		api.PATCH("users", middleware.Auth, controller.EditUser)
+		api.GET("users", middleware.Auth, controller.IsUsernameValid)
 	}
 }
