@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prithuadhikary/user-service/model"
@@ -18,6 +20,9 @@ type authController struct {
 
 func (controller *authController) Auth(ctx *gin.Context) {
 	cookie := ctx.Request.Header.Get("cookie")
+	requestCookie := strings.Split(cookie, ";")
+	fmt.Println("ini cookie")
+	fmt.Println(requestCookie[0])
 
 	if cookie == "" {
 		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -27,7 +32,7 @@ func (controller *authController) Auth(ctx *gin.Context) {
 	}
 
 	user, err := controller.service.Whoami(&model.Whoami{
-		SessionID: cookie,
+		SessionID: requestCookie[0],
 	})
 
 	if err != nil {

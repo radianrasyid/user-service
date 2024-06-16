@@ -1,11 +1,9 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -181,40 +179,35 @@ func (service *userService) Whoami(request *model.Whoami) (*model.WhoamiResponse
 }
 
 func (service *userService) EditUser(request *model.EditUserRequest, currentUser *model.WhoamiResponse) (*model.EditUserRequest, error) {
+
+	currentRequest := &model.EditUserRequest{
+		Username: request.Username,
+		Email:    request.Email,
+	}
 	fmt.Print("ini request yang masuk ke edit user")
-	fmt.Println(request)
-	newRequest := &model.EditUserRequest{}
+	fmt.Println(currentRequest)
+	fmt.Print("ini data current user")
+	fmt.Println(currentUser)
 
-	requestValue := reflect.ValueOf(request).Elem()
-	newRequestValue := reflect.ValueOf(newRequest).Elem()
+	v := reflect.ValueOf(request).Elem()
+
+	typeOfCurrentRequest := v.Type()
 	var loopErrors []string
-	for i := 0; i < requestValue.NumField(); i++ {
-		reqField := requestValue.Field(i)
-		if !reqField.IsNil() {
-			newReqField := newRequestValue.FieldByName(requestValue.Type().Field(i).Name)
-			if newReqField.IsValid() && newReqField.CanSet() {
-				fieldName := requestValue.Type().Field(i).Name
-				fieldValue := requestValue.Interface()
-				fmt.Print("ini field yang mau di update")
-				fmt.Println(fieldName)
-				newReqField.Set(reqField)
-				err := service.repository.EditUser(currentUser.Username, fieldValue, strings.ToLower(fieldName))
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldName := typeOfCurrentRequest.Field(i).Name
+		fieldValue := field.Interface()
 
-				if err != nil {
-					loopErrors = append(loopErrors, fmt.Sprintf("can not update this field %f", fieldName))
-				}
+		if fieldValue != "" {
+			err := service.repository.EditUser(currentUser.Username, fieldValue, strings.ToLower(fieldName))
+
+			if err != nil {
+				loopErrors = append(loopErrors, err.Error())
 			}
 		}
 	}
 
-	fmt.Print("ini data error edit user")
-	fmt.Println(loopErrors)
-
-	if len(loopErrors) > 0 {
-		return nil, json.NewEncoder(os.Stdout).Encode(loopErrors)
-	}
-
-	return newRequest, nil
+	return request, nil
 }
 
 func (service *userService) IsUserExist(username string) (bool, error) {

@@ -22,8 +22,8 @@ type WhoamiResponse struct {
 }
 
 type EditUserRequest struct {
-	Username *string `json:"username,omitempty"`
-	Email    *string `json:"email,omitempty"`
+	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
 }
 
 type IsUsernameExistRequest struct {
