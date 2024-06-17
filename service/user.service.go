@@ -196,15 +196,28 @@ func (service *userService) EditUser(request *model.EditUserRequest, currentUser
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		fieldName := typeOfCurrentRequest.Field(i).Name
-		fieldValue := field.Interface()
 
-		if fieldValue != "" {
+		var fieldValue interface{}
+
+		if field.Kind() == reflect.Ptr {
+			if !field.IsNil() {
+				fieldValue = field.Elem().Interface()
+			}
+		} else {
+			fieldValue = field.Interface()
+		}
+
+		if fieldValue != nil {
 			err := service.repository.EditUser(currentUser.Username, fieldValue, strings.ToLower(fieldName))
 
 			if err != nil {
 				loopErrors = append(loopErrors, err.Error())
 			}
 		}
+	}
+
+	if len(loopErrors) > 0 {
+		return nil, fmt.Errorf("errors occured: %v", loopErrors)
 	}
 
 	return request, nil
